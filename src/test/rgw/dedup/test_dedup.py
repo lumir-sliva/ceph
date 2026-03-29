@@ -2367,7 +2367,7 @@ def test_copy_after_dedup():
 
         # At this point the original obejcts are all removed
         # Objects created by server-side-copy should keep the tail in place
-        # because of teh refcount
+        # because of the refcount
         verify_objects_copy(bucket_cp, files, conn, expected_results, config)
 
     finally:
