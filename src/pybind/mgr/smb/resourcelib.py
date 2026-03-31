@@ -399,6 +399,10 @@ class Resource:
                 self._object_sub_from_simplified(subtype, v) for v in value
             ]
         if fld.takes(dict):
+            if not isinstance(value, dict):
+                raise ResourceTypeError(
+                    f'{fld.name} expects a dict not a {type(value).__name__}'
+                )
             ktype, vtype = fld.dict_element_types()
             # keys must be simple types right now so we just
             # cast it directly
