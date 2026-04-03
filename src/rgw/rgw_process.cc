@@ -23,6 +23,8 @@
 #include "rgw_ratelimit.h"
 #include "rgw_bucket_logging.h"
 
+#include <boost/asio/basic_waitable_timer.hpp>
+
 #include "services/svc_zone_utils.h"
 
 #define dout_subsys ceph_subsys_rgw
@@ -259,6 +261,27 @@ int rgw_process_authenticated(RGWHandler_REST * const handler,
 
   ldpp_dout(op, 2) << "check rate limiting" << dendl;
   if (rate_limit(driver, s)) {
+    // Note: this delay only applies to the token-bucket rate limiter path.
+    // The dmclock scheduler path (schedule_request → EAGAIN) bypasses this
+    // function and calls abort_early directly from process_request().
+    const auto delay_ms = std::min(
+        g_conf().get_val<uint64_t>("rgw_ratelimit_response_delay_ms"),
+        static_cast<uint64_t>(30000));
+    if (delay_ms > 0) {
+      if (y) {
+        using Clock = ceph::coarse_mono_clock;
+        boost::asio::basic_waitable_timer<Clock> timer(
+            y.get_yield_context().get_executor());
+        timer.expires_after(std::chrono::milliseconds(delay_ms));
+        boost::system::error_code ec;
+        timer.async_wait(y.get_yield_context()[ec]);
+        // ec is intentionally ignored: even if the timer is cancelled
+        // (e.g. during shutdown), we still return ERR_RATE_LIMITED.
+      } else {
+        ldpp_dout(op, 5) << "rgw_ratelimit_response_delay_ms is set but "
+            "no yield context available; delay skipped" << dendl;
+      }
+    }
     return -ERR_RATE_LIMITED;
   }
   ldpp_dout(op, 2) << "executing" << dendl;

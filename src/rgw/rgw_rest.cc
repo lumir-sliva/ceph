@@ -80,6 +80,7 @@ const static struct rgw_http_status_code http_codes[] = {
   { 416, "Requested Range Not Satisfiable" },
   { 417, "Expectation Failed" },
   { 422, "Unprocessable Entity" },
+  { 429, "Too Many Requests" },
   { 498, "Rate Limited"},
   { 500, "Internal Server Error" },
   { 501, "Not Implemented" },
@@ -717,7 +718,25 @@ void abort_early(req_state *s, RGWOp* op, int err_no,
       build_redirect_url(s, s->redirect_zone_endpoint, &s->redirect);
     }
 
+    const bool is_s3_rate_limited =
+        (err_no == -ERR_RATE_LIMITED && !(s->prot_flags & RGW_REST_SWIFT));
+    if (is_s3_rate_limited) {
+      const auto http_status = g_conf().get_val<uint64_t>("rgw_ratelimit_http_status");
+      if (http_status > 0) {
+        if (http_status_names.count(static_cast<int>(http_status))) {
+          s->err.http_ret = static_cast<int>(http_status);
+        } else {
+          ldpp_dout(s, 0) << "WARNING: rgw_ratelimit_http_status "
+              << http_status << " is not a known HTTP status code, ignoring"
+              << dendl;
+        }
+      }
+    }
     dump_errno(s);
+    if (is_s3_rate_limited) {
+      const auto interval = g_conf().get_val<uint64_t>("rgw_ratelimit_interval");
+      dump_header(s, "Retry-After", static_cast<long long>(interval));
+    }
     dump_bucket_from_state(s);
     if (err_no == -ERR_PERMANENT_REDIRECT || err_no == -ERR_WEBSITE_REDIRECT) {
       string dest_uri;

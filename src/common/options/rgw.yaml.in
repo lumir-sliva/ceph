@@ -4604,6 +4604,34 @@ options:
   flags:
   - startup
   with_legacy: true
+- name: rgw_ratelimit_http_status
+  type: uint
+  level: advanced
+  desc: HTTP status code returned when a request is rate-limited
+  long_desc: By default the gateway returns 503 with the S3 error code SlowDown
+    for rate-limited requests, matching the AWS S3 behavior. Setting this to 429
+    returns the standard HTTP Too Many Requests status instead, which prevents
+    load balancers such as HAProxy from misinterpreting the response as a
+    backend failure. Set to 0 to use the built-in default (503).
+  default: 0
+  services:
+  - rgw
+- name: rgw_ratelimit_response_delay_ms
+  type: uint
+  level: advanced
+  desc: Delay in milliseconds before sending a rate-limit error response
+  long_desc: When a request is rate-limited, the gateway will wait this many
+    milliseconds before sending the error response. This slows down clients
+    that immediately retry upon receiving a rate-limit error, reducing the
+    impact of retry storms on the gateway. Set to 0 to disable. On the Beast
+    frontend the delay suspends the coroutine without blocking a worker thread;
+    on thread-per-request frontends the delay is skipped. Values above 30
+    seconds are almost certainly a misconfiguration.
+  default: 0
+  min: 0
+  max: 30000
+  services:
+  - rgw
 - name: rgw_redis_connection_pool_size
   type: int
   level: basic

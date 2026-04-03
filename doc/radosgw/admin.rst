@@ -678,6 +678,20 @@ then the ``GET`` action will fail. After "user A" has completed this 1 GB
 operation, RGW blocks the user's requests for up to two accumulation intervals. After this
 time has elapsed, "user A" will be able to send ``GET`` requests again.
 
+Rate-limited requests receive an HTTP ``503`` response with the S3 error code
+``SlowDown``, matching the AWS S3 behavior. The response includes a
+``Retry-After`` header set to the accumulation interval in seconds (see
+:confval:`rgw_ratelimit_interval`). This is an upper bound; the actual time
+until the rate-limit window resets may be shorter. The HTTP status code can be changed to ``429 Too Many
+Requests`` via :confval:`rgw_ratelimit_http_status` to prevent load balancers
+from misinterpreting rate-limited responses as backend failures.
+
+Some clients retry immediately upon receiving a rate-limit error, which can
+amplify load and cause a denial-of-service condition for other users. To
+mitigate this, the :confval:`rgw_ratelimit_response_delay_ms` option can be set
+to introduce an artificial delay (in milliseconds) before the gateway sends the
+rate-limit response. This holds the connection, preventing the client from
+retrying until the response is delivered.
 
 - **Bucket:** The ``--bucket`` option allows you to specify a rate limit for a
   bucket.
