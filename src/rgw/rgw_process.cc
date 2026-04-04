@@ -169,6 +169,16 @@ bool rate_limit(rgw::sal::Driver* driver, req_state* s) {
   }
   s->user_ratelimit = *user_ratelimit;
   s->bucket_ratelimit = *bucket_ratelimit;
+  if (limit_user) {
+    ldpp_dout(s, 5) << "rate limited: scope=user"
+        << " uid=" << std::quoted(s->user->get_id().to_str())
+        << " method=" << (method ? method : "unknown") << dendl;
+  } else if (limit_bucket) {
+    ldpp_dout(s, 5) << "rate limited: scope=bucket"
+        << " bucket=" << s->bucket->get_name()
+        << " uid=" << std::quoted(s->user->get_id().to_str())
+        << " method=" << (method ? method : "unknown") << dendl;
+  }
   return (limit_user || limit_bucket);
 }
 
