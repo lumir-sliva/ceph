@@ -664,8 +664,7 @@ private:
     return get_alloc_tail_target() > journal_alloc_tail;
   }
 
-  using trim_ertr = crimson::errorator<
-    crimson::ct_error::input_output_error>;
+  using trim_ertr = base_ertr;
   trim_ertr::future<> trim_dirty();
 
   trim_ertr::future<> trim_alloc();

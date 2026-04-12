@@ -33,14 +33,12 @@ LogManager::initialize_omap(Transaction &t, laddr_t hint, omap_type_t omap_type)
   auto extent = co_await tm.alloc_non_data_extent<LogNode>(
     t, hint, LOG_NODE_BLOCK_SIZE
   ).handle_error_interruptible(
-    crimson::ct_error::enospc::assert_failure{"unexpected enospc"},
     TransactionManager::alloc_extent_iertr::pass_further{}
   );
   // for dup list
   auto d_extent = co_await tm.alloc_non_data_extent<LogNode>(
     t, hint, LOG_NODE_BLOCK_SIZE
   ).handle_error_interruptible(
-    crimson::ct_error::enospc::assert_failure{"unexpected enospc"},
     TransactionManager::alloc_extent_iertr::pass_further{}
   );
   extent->set_dup_tail_addr(d_extent->get_laddr());
@@ -136,7 +134,6 @@ LogManager::omap_set_keys(
       return tm.alloc_non_data_extent<LogNode>(
 	t, log_root.hint, LOG_NODE_BLOCK_SIZE
       ).handle_error_interruptible(
-	crimson::ct_error::enospc::assert_failure{"unexpected enospc"},
 	omap_set_key_iertr::pass_further{}
       ).si_then([prev_laddr](auto ext) {
         assert(ext);
@@ -273,8 +270,7 @@ LogManager::_log_set_multi_block_key(omap_root_t &log_root,
     auto extent = co_await tm.alloc_non_data_extent<LogNode>(
       t, log_root.hint, LOG_NODE_BLOCK_SIZE
     ).handle_error_interruptible(
-      crimson::ct_error::enospc::assert_failure{"unexpected enospc"},
-      omap_set_key_iertr::pass_further{}
+        omap_set_key_iertr::pass_further{}
     );
     assert(extent);
     chunk.substr_of(value, offset, chunk_len);
@@ -330,7 +326,6 @@ LogManager::_log_set_key(omap_root_t &log_root,
   auto extent = co_await tm.alloc_non_data_extent<LogNode>(
     t, log_root.hint, LOG_NODE_BLOCK_SIZE
   ).handle_error_interruptible(
-    crimson::ct_error::enospc::assert_failure{"unexpected enospc"},
     omap_set_key_iertr::pass_further{}
   );
   assert(extent);

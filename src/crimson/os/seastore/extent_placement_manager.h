@@ -35,8 +35,7 @@ public:
 
   virtual writer_stats_t get_stats() const = 0;
 
-  using open_ertr = base_ertr::extend<
-    crimson::ct_error::enospc>;
+  using open_ertr = base_ertr;
   virtual open_ertr::future<> open() = 0;
 
   virtual paddr_t alloc_paddr(extent_len_t length) = 0;
@@ -331,8 +330,7 @@ public:
     bool report_detail,
     double seconds) const;
 
-  using mount_ertr = crimson::errorator<
-      crimson::ct_error::input_output_error>;
+  using mount_ertr = base_ertr;
   using mount_ret = mount_ertr::future<>;
   mount_ret mount() {
     return background_process.mount(store_index);

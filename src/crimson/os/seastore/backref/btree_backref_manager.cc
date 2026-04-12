@@ -301,7 +301,7 @@ BtreeBackrefManager::merge_cached_backrefs(
               ).si_then([](auto&&) {
                 return seastar::now();
               }).handle_error_interruptible(
-                crimson::ct_error::input_output_error::pass_further(),
+                base_iertr::pass_further{},
                 crimson::ct_error::assert_all("no enoent possible")
               );
             }

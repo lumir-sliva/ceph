@@ -1294,6 +1294,8 @@ SeaStore::Shard::get_attr(
   }).handle_error(
     crimson::ct_error::input_output_error::assert_failure{
       "EIO when getting attrs"},
+    crimson::ct_error::enospc::assert_failure{
+      "ENOSPC when getting attrs"},
     crimson::ct_error::pass_further_all{}
   ).finally([this] {
     assert(shard_stats.pending_read_num);
@@ -1351,6 +1353,8 @@ SeaStore::Shard::get_attrs(
   }).handle_error(
     crimson::ct_error::input_output_error::assert_failure{
       "EIO when getting attrs"},
+    crimson::ct_error::enospc::assert_failure{
+      "ENOSPC when getting attrs"},
     crimson::ct_error::pass_further_all{}
   ).finally([this] {
     assert(shard_stats.pending_read_num);
@@ -1653,6 +1657,14 @@ seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
       co_await transaction_manager->submit_transaction(*ctx.transaction);
     })
   ).handle_error(
+    crimson::ct_error::enospc::handle([FNAME, &ctx](auto) {
+      transaction_dump(ctx.ext_transaction);
+      ceph_abort_msg(fmt::format(
+        "{} hit ENOSPC, store is full -- "
+        "cluster may be misconfigured or monitor failed to set pool full flag",
+        FNAME));
+      return seastar::now();
+    }),
     crimson::ct_error::all_same_way([FNAME, &ctx](auto e) {
       transaction_dump(ctx.ext_transaction);
       ceph_abort_msg(fmt::format("{} unexpected error: {}", FNAME, e));

@@ -5,6 +5,7 @@
 
 #include "crimson/os/seastore/cached_extent.h"
 #include "crimson/os/seastore/transaction.h"
+#include "crimson/os/seastore/transaction_interruptor.h"
 #include "crimson/os/seastore/root_block.h"
 
 namespace crimson::os::seastore {
@@ -56,8 +57,7 @@ private:
   CachedExtentRef retired_placeholder;
 };
 
-using get_child_iertr = trans_iertr<crimson::errorator<
-  crimson::ct_error::input_output_error>>;
+using get_child_iertr = base_iertr;
 template <typename T>
 using get_child_ifut = get_child_iertr::future<TCachedExtentRef<T>>;
 

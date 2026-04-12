@@ -107,7 +107,8 @@ public:
   using access_ertr = crimson::errorator<
     crimson::ct_error::input_output_error,
     crimson::ct_error::permission_denied,
-    crimson::ct_error::enoent>;
+    crimson::ct_error::enoent,
+    crimson::ct_error::enospc>;
 
   using mkfs_ertr = access_ertr;
   using mkfs_ret = mkfs_ertr::future<>;
@@ -143,8 +144,7 @@ public:
     return false;
   }
 
-  using close_ertr = crimson::errorator<
-    crimson::ct_error::input_output_error>;
+  using close_ertr = base_ertr;
   virtual close_ertr::future<> close() = 0;
 
   using read_ertr = crimson::errorator<

@@ -55,7 +55,8 @@ public:
     using CollectionRef = boost::intrusive_ptr<FuturizedCollection>;
     using base_errorator = crimson::errorator<crimson::ct_error::input_output_error>;
     using read_errorator = crimson::errorator<crimson::ct_error::enoent,
-					      crimson::ct_error::input_output_error>;
+					      crimson::ct_error::input_output_error,
+					      crimson::ct_error::enospc>;
     virtual read_errorator::future<ceph::bufferlist> read(
       CollectionRef c,
       const ghobject_t& oid,

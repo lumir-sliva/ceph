@@ -30,9 +30,7 @@ public:
    * initializes journal for mkfs writes -- must run prior to calls
    * to submit_record.
    */
-  using open_for_mkfs_ertr = crimson::errorator<
-    crimson::ct_error::input_output_error
-    >;
+  using open_for_mkfs_ertr = base_ertr;
   using open_for_mkfs_ret = open_for_mkfs_ertr::future<journal_seq_t>;
   virtual open_for_mkfs_ret open_for_mkfs() = 0;
 
@@ -46,8 +44,7 @@ public:
   virtual open_for_mount_ret open_for_mount() = 0;
 
   /// close journal
-  using close_ertr = crimson::errorator<
-    crimson::ct_error::input_output_error>;
+  using close_ertr = base_ertr;
   virtual close_ertr::future<> close() = 0;
 
   /**
@@ -57,7 +54,8 @@ public:
    */
   using submit_record_ertr = crimson::errorator<
     crimson::ct_error::erange,
-    crimson::ct_error::input_output_error
+    crimson::ct_error::input_output_error,
+    crimson::ct_error::enospc
     >;
   using on_submission_func_t = std::function<
     void(record_locator_t)>;

@@ -1412,7 +1412,8 @@ SegmentCleaner::clean_space_ret SegmentCleaner::clean_space()
 	  reclaim_state->start_pos,
 	  reclaim_state->end_pos,
 	  reclaim_state->target_generation
-      ).safe_then([this, FNAME, pavail_ratio, start, &reclaimed, &runs] {
+      ).safe_then([this, FNAME, pavail_ratio, start, &reclaimed, &runs]
+        -> base_ertr::future<> {
         stats.reclaiming_bytes += reclaimed;
         auto d = seastar::lowres_system_clock::now() - start;
         DEBUG("duration: {}, pavail_ratio before: {}, repeats: {}",

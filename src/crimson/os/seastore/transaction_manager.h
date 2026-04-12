@@ -76,13 +76,11 @@ public:
     shard_stats_t& shard_stats);
 
   /// Writes initial metadata to disk
-  using mkfs_ertr = base_ertr::extend<
-    crimson::ct_error::enospc>;
+  using mkfs_ertr = base_ertr;
   mkfs_ertr::future<> mkfs();
 
   /// Reads initial metadata from disk
-  using mount_ertr = base_ertr::extend<
-    crimson::ct_error::enospc>;
+  using mount_ertr = base_ertr;
   mount_ertr::future<> mount();
 
   /// Closes transaction_manager
@@ -516,10 +514,8 @@ public:
    * Allocates a new block of type T with the minimum lba range of size len
    * greater than laddr_hint.
    */
-  using alloc_extent_ertr = base_ertr::extend<
-    crimson::ct_error::enospc>;
-  using alloc_extent_iertr = base_iertr::extend<
-    crimson::ct_error::enospc>;
+  using alloc_extent_ertr = base_ertr;
+  using alloc_extent_iertr = base_iertr;
   template <typename T>
   using alloc_extent_ret = alloc_extent_iertr::future<TCachedExtentRef<T>>;
   template <typename T>

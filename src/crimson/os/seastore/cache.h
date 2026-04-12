@@ -1377,8 +1377,7 @@ public:
    *
    * TODO: should flush dirty blocks
    */
-  using close_ertr = crimson::errorator<
-    crimson::ct_error::input_output_error>;
+  using close_ertr = base_ertr;
   close_ertr::future<> close();
 
   /**

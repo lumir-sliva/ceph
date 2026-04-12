@@ -27,7 +27,8 @@
 namespace crimson::os::seastore {
 
 using base_ertr = crimson::errorator<
-  crimson::ct_error::input_output_error>;
+  crimson::ct_error::input_output_error,
+  crimson::ct_error::enospc>;
 
 class cache_hint_t {
   enum hint_t {
