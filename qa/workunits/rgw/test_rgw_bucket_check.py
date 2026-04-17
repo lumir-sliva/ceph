@@ -2,8 +2,9 @@
 
 import logging as log
 import json
+import re
 import botocore
-from common import exec_cmd, create_user, boto_connect, put_objects, create_unlinked_objects
+from common import exec_cmd, exec_cmd_with_stderr, create_user, boto_connect, put_objects, create_unlinked_objects
 from botocore.config import Config
 
 """
@@ -185,6 +186,65 @@ def main():
     assert json_out['usage']['rgw.main']['size_kb'] == 0
     assert json_out['usage']['rgw.main']['size_kb_actual'] == 0
     assert json_out['usage']['rgw.main']['size_kb_utilized'] == 0
+
+    # ---- Progress reporting tests ----
+    # Set up fresh state for progress tests: versioned bucket with objects
+    bucket.object_versions.all().delete()
+    ok_keys = ['p', 'q', 'r']
+    ok_objs = put_objects(bucket, ok_keys)
+
+    # TESTCASE 'bucket check olh progress shows shard count and ETA'
+    log.debug('TEST: bucket check olh progress shows shard count and ETA\n')
+    _, stderr = exec_cmd_with_stderr(
+        f'radosgw-admin bucket check olh --bucket {BUCKET_NAME} --debug-rgw=1')
+    stderr_str = stderr.decode('utf-8', errors='replace')
+    # per-shard lines: "finished N/M shards (...remaining)"
+    shard_lines = re.findall(r'finished (\d+)/(\d+) shards \(\d+ entries found, ~\d+m\d+s remaining\)', stderr_str)
+    # final line: "finished all M shards (...elapsed ...)"
+    final_lines = re.findall(r'finished all (\d+) shards \(\d+ entries found, elapsed \d+m\d+s\)', stderr_str)
+    assert len(final_lines) == 1, f'expected 1 final progress line, got {len(final_lines)}'
+    total_shards = int(final_lines[0])
+    assert total_shards > 0, 'total shards must be positive'
+    # every per-shard line should reference the correct total
+    for completed, total in shard_lines:
+        assert int(total) == total_shards, f'shard total mismatch: {total} != {total_shards}'
+        assert int(completed) <= total_shards, f'completed {completed} exceeds total {total_shards}'
+
+    # TESTCASE 'bucket check unlinked progress shows shard count and ETA'
+    log.debug('TEST: bucket check unlinked progress shows shard count and ETA\n')
+    _, stderr = exec_cmd_with_stderr(
+        f'radosgw-admin bucket check unlinked --bucket {BUCKET_NAME} --min-age-hours 0 --debug-rgw=1')
+    stderr_str = stderr.decode('utf-8', errors='replace')
+    shard_lines = re.findall(r'finished (\d+)/(\d+) shards \(\d+ entries found, ~\d+m\d+s remaining\)', stderr_str)
+    final_lines = re.findall(r'finished all (\d+) shards \(\d+ entries found, elapsed \d+m\d+s\)', stderr_str)
+    assert len(final_lines) == 1, f'expected 1 final progress line, got {len(final_lines)}'
+    total_shards = int(final_lines[0])
+    assert total_shards > 0, 'total shards must be positive'
+    for completed, total in shard_lines:
+        assert int(total) == total_shards, f'shard total mismatch: {total} != {total_shards}'
+
+    # TESTCASE 'bucket check olh --hide-progress suppresses progress output'
+    log.debug('TEST: bucket check olh --hide-progress suppresses progress output\n')
+    _, stderr = exec_cmd_with_stderr(
+        f'radosgw-admin bucket check olh --bucket {BUCKET_NAME} --hide-progress --debug-rgw=1')
+    stderr_str = stderr.decode('utf-8', errors='replace')
+    assert 'finished' not in stderr_str, 'progress output should be hidden with --hide-progress'
+
+    # TESTCASE 'bucket check unlinked --hide-progress suppresses progress output'
+    log.debug('TEST: bucket check unlinked --hide-progress suppresses progress output\n')
+    _, stderr = exec_cmd_with_stderr(
+        f'radosgw-admin bucket check unlinked --bucket {BUCKET_NAME} --min-age-hours 0 --hide-progress --debug-rgw=1')
+    stderr_str = stderr.decode('utf-8', errors='replace')
+    assert 'finished' not in stderr_str, 'progress output should be hidden with --hide-progress'
+
+    # TESTCASE 'bucket check olh progress completed count is monotonically increasing'
+    log.debug('TEST: bucket check olh progress completed count is monotonically increasing\n')
+    _, stderr = exec_cmd_with_stderr(
+        f'radosgw-admin bucket check olh --bucket {BUCKET_NAME} --debug-rgw=1')
+    stderr_str = stderr.decode('utf-8', errors='replace')
+    completed_counts = [int(m) for m in re.findall(r'finished (\d+)/\d+ shards', stderr_str)]
+    assert completed_counts == sorted(completed_counts), \
+        f'completed shard counts are not monotonically increasing: {completed_counts}'
 
     # Clean up
     log.debug("Deleting bucket {}".format(BUCKET_NAME))

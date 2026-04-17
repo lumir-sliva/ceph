@@ -27,6 +27,19 @@ def exec_cmd(cmd, wait = True, **kwargs):
             return out
         return (out, proc.returncode)
     return ''
+
+def exec_cmd_with_stderr(cmd, **kwargs):
+    check_retcode = kwargs.pop('check_retcode', True)
+    kwargs['shell'] = True
+    kwargs['stdout'] = subprocess.PIPE
+    kwargs['stderr'] = subprocess.PIPE
+    proc = subprocess.Popen(cmd, **kwargs)
+    log.info(proc.args)
+    out, err = proc.communicate()
+    if check_retcode:
+        assert(proc.returncode == 0)
+        return (out, err)
+    return (out, err, proc.returncode)
     
 def create_user(uid, display_name, access_key, secret_key):
     _, ret = exec_cmd(f'radosgw-admin user create --uid {uid} --display-name "{display_name}" --access-key {access_key} --secret {secret_key}', check_retcode=False)

@@ -740,10 +740,12 @@ int RGWBucket::check_index_olh(rgw::sal::RadosStore* const rados_store,
   const int max_shards = rgw::num_shards(index_layout.normal);
   std::string verb = op_state.will_fix_index() ? "removed" : "found";
   uint64_t count_out = 0;
-  
+
   boost::asio::io_context context;
   int next_shard = 0;
-  
+  int shards_completed = 0;
+  auto start_time = ceph::mono_clock::now();
+
   const int max_aio = std::max(1, op_state.get_max_aio());
 
   for (int i=0; i<max_aio; i++) {
@@ -758,13 +760,21 @@ int RGWBucket::check_index_olh(rgw::sal::RadosStore* const rados_store,
         uint64_t shard_count;
         int r = ::check_index_olh(rados_store, &*bucket, dpp, op_state, flusher, shard, &shard_count, y);
         if (r < 0) {
-          ldpp_dout(dpp, -1) << "NOTICE: error processing shard " << shard << 
+          ldpp_dout(dpp, -1) << "NOTICE: error processing shard " << shard <<
             " check_index_olh(): " << r << dendl;
         }
         count_out += shard_count;
+        shards_completed += 1;
         if (!op_state.hide_progress) {
-          ldpp_dout(dpp, 1) << "NOTICE: finished shard " << shard << " (" << shard_count <<
-            " entries " << verb << ")" << dendl;
+          auto elapsed = ceph::mono_clock::now() - start_time;
+          auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+          auto remaining_s = (shards_completed > 0 && shards_completed < max_shards)
+            ? elapsed_s * (max_shards - shards_completed) / shards_completed
+            : 0;
+          ldpp_dout(dpp, 1) << "NOTICE: finished " << shards_completed <<
+            "/" << max_shards << " shards (" << shard_count <<
+            " entries " << verb << ", ~" <<
+            remaining_s / 60 << "m" << remaining_s % 60 << "s remaining)" << dendl;
         }
       }
     }, [] (std::exception_ptr eptr) {
@@ -777,8 +787,11 @@ int RGWBucket::check_index_olh(rgw::sal::RadosStore* const rados_store,
     return -e.code().value();
   }
   if (!op_state.hide_progress) {
-    ldpp_dout(dpp, 1) << "NOTICE: finished all shards (" << count_out <<
-      " entries " << verb << ")" << dendl;
+    auto elapsed = ceph::mono_clock::now() - start_time;
+    auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+    ldpp_dout(dpp, 1) << "NOTICE: finished all " << max_shards <<
+      " shards (" << count_out << " entries " << verb <<
+      ", elapsed " << elapsed_s / 60 << "m" << elapsed_s % 60 << "s)" << dendl;
   }
   if (op_state.dump_keys) {
     formatter->close_section();
@@ -953,9 +966,11 @@ int RGWBucket::check_index_unlinked(rgw::sal::RadosStore* const rados_store,
   const int max_shards = rgw::num_shards(bucket_info.layout.current_index);
   std::string verb = op_state.will_fix_index() ? "removed" : "found";
   uint64_t count_out = 0;
-  
+
   int max_aio = std::max(1, op_state.get_max_aio());
   int next_shard = 0;
+  int shards_completed = 0;
+  auto start_time = ceph::mono_clock::now();
   boost::asio::io_context context;
   for (int i=0; i<max_aio; i++) {
     boost::asio::spawn(context, [&](boost::asio::yield_context yield) {
@@ -968,13 +983,21 @@ int RGWBucket::check_index_unlinked(rgw::sal::RadosStore* const rados_store,
         uint64_t shard_count = 0;
         int r = ::check_index_unlinked(rados_store, &*bucket, dpp, op_state, flusher, shard, &shard_count, yield);
         if (r < 0) {
-          ldpp_dout(dpp, -1) << "ERROR: error processing shard " << shard << 
+          ldpp_dout(dpp, -1) << "ERROR: error processing shard " << shard <<
             " check_index_unlinked(): " << r << dendl;
         }
         count_out += shard_count;
+        shards_completed += 1;
         if (!op_state.hide_progress) {
-          ldpp_dout(dpp, 1) << "NOTICE: finished shard " << shard << " (" << shard_count <<
-            " entries " << verb << ")" << dendl;
+          auto elapsed = ceph::mono_clock::now() - start_time;
+          auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+          auto remaining_s = (shards_completed > 0 && shards_completed < max_shards)
+            ? elapsed_s * (max_shards - shards_completed) / shards_completed
+            : 0;
+          ldpp_dout(dpp, 1) << "NOTICE: finished " << shards_completed <<
+            "/" << max_shards << " shards (" << shard_count <<
+            " entries " << verb << ", ~" <<
+            remaining_s / 60 << "m" << remaining_s % 60 << "s remaining)" << dendl;
         }
       }
     }, [] (std::exception_ptr eptr) {
@@ -988,8 +1011,11 @@ int RGWBucket::check_index_unlinked(rgw::sal::RadosStore* const rados_store,
   }
 
   if (!op_state.hide_progress) {
-    ldpp_dout(dpp, 1) << "NOTICE: finished all shards (" << count_out <<
-      " entries " << verb << ")" << dendl;
+    auto elapsed = ceph::mono_clock::now() - start_time;
+    auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+    ldpp_dout(dpp, 1) << "NOTICE: finished all " << max_shards <<
+      " shards (" << count_out << " entries " << verb <<
+      ", elapsed " << elapsed_s / 60 << "m" << elapsed_s % 60 << "s)" << dendl;
   }
   if (op_state.dump_keys) {
     formatter->close_section();
