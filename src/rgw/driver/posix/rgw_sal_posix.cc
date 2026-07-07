@@ -4312,6 +4312,45 @@ int POSIXMultipartUpload::complete(const DoutPrefixProvider *dpp,
   bool truncated;
   int ret;
 
+  // Enforce If-Match / If-None-Match against the existing target object before
+  // assembling the final object; multipart completion previously ignored both.
+  if (if_match || if_nomatch) {
+    std::unique_ptr<rgw::sal::Object> curr =
+        target_obj->get_bucket()->get_object(target_obj->get_key());
+    bool exists = static_cast<POSIXObject*>(curr.get())->check_exists(dpp);
+    bufferlist etag_bl;
+    if (exists) {
+      curr->get_obj_attrs(y, dpp);
+      get_attr(curr->get_attrs(), RGW_ATTR_ETAG, etag_bl);
+    }
+    if (if_match) {
+      if (strcmp(if_match, "*") == 0) {
+        if (!exists) {
+          return -ERR_PRECONDITION_FAILED;
+        }
+      } else {
+        std::string im = rgw_string_unquote(if_match);
+        if (!exists || etag_bl.length() == 0 ||
+            im.compare(0, etag_bl.length(), etag_bl.c_str(), etag_bl.length()) != 0) {
+          return -ERR_PRECONDITION_FAILED;
+        }
+      }
+    }
+    if (if_nomatch) {
+      if (strcmp(if_nomatch, "*") == 0) {
+        if (exists) {
+          return -ERR_PRECONDITION_FAILED;
+        }
+      } else {
+        std::string inm = rgw_string_unquote(if_nomatch);
+        if (exists && etag_bl.length() > 0 &&
+            inm.compare(0, etag_bl.length(), etag_bl.c_str(), etag_bl.length()) == 0) {
+          return -ERR_PRECONDITION_FAILED;
+        }
+      }
+    }
+  }
+
   int total_parts = 0;
   int handled_parts = 0;
   int max_parts = 1000;
@@ -4674,10 +4713,9 @@ int POSIXAtomicWriter::complete(size_t accounted_size, const std::string& etag,
       }
     } else {
       bufferlist bl;
-      if (!get_attr(obj->get_attrs(), RGW_ATTR_ETAG, bl)) {
-        return -ERR_PRECONDITION_FAILED;
-      }
-      if (strncmp(if_match, bl.c_str(), bl.length()) != 0) {
+      std::string im = rgw_string_unquote(if_match);
+      if (!get_attr(obj->get_attrs(), RGW_ATTR_ETAG, bl) ||
+          im.compare(0, bl.length(), bl.c_str(), bl.length()) != 0) {
         return -ERR_PRECONDITION_FAILED;
       }
     }
@@ -4690,10 +4728,9 @@ int POSIXAtomicWriter::complete(size_t accounted_size, const std::string& etag,
       }
     } else {
       bufferlist bl;
-      if (!get_attr(obj->get_attrs(), RGW_ATTR_ETAG, bl)) {
-        return -ERR_PRECONDITION_FAILED;
-      }
-      if (strncmp(if_nomatch, bl.c_str(), bl.length()) == 0) {
+      std::string inm = rgw_string_unquote(if_nomatch);
+      if (exists && get_attr(obj->get_attrs(), RGW_ATTR_ETAG, bl) &&
+          inm.compare(0, bl.length(), bl.c_str(), bl.length()) == 0) {
         return -ERR_PRECONDITION_FAILED;
       }
     }
