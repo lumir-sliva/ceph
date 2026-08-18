@@ -18,6 +18,13 @@ add_executable(ceph_test_mon_msg
   )
 target_link_libraries(ceph_test_mon_msg os osdc global ${UNITTEST_LIBS})
 
+# unittest_mon_health
+add_executable(unittest_mon_health
+  test_health_monitor.cc
+  )
+add_ceph_unittest(unittest_mon_health)
+target_link_libraries(unittest_mon_health mon global)
+
 # unittest_config_map
 add_executable(unittest_config_map
   test_config_map.cc

@@ -15,6 +15,7 @@
 
 #include <stdlib.h>
 #include <limits.h>
+#include <limits>
 #include <sstream>
 #include <regex>
 #include <time.h>
@@ -583,6 +584,91 @@ health_status_t HealthMonitor::get_health_status(
   return r;
 }
 
+namespace {
+
+/// multiply, clamping at UINT64_MAX rather than wrapping
+uint64_t sat_mul(uint64_t a, uint64_t b)
+{
+  if (a == 0 || b == 0) {
+    return 0;
+  }
+  if (a > std::numeric_limits<uint64_t>::max() / b) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+  return a * b;
+}
+
+/// add, clamping at UINT64_MAX rather than wrapping
+uint64_t sat_add(uint64_t a, uint64_t b)
+{
+  if (a > std::numeric_limits<uint64_t>::max() - b) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+  return a + b;
+}
+
+} // anonymous namespace
+
+HealthMonitor::data_size_warn_t HealthMonitor::derive_data_size_warn(
+  uint64_t base,
+  uint64_t per_osd,
+  uint64_t per_pg,
+  uint64_t num_osds,
+  uint64_t num_pgs,
+  uint64_t fs_total,
+  double fs_ratio)
+{
+  data_size_warn_t d;
+  d.base = base;
+  d.num_osds = num_osds;
+  d.num_pgs = num_pgs;
+  d.fs_total = fs_total;
+  d.fs_ratio = fs_ratio;
+
+  d.raw = sat_add(base, sat_add(sat_mul(per_osd, num_osds),
+				sat_mul(per_pg, num_pgs)));
+  d.effective = d.raw;
+
+  if (fs_ratio > 0 && fs_total > 0) {
+    uint64_t cap = static_cast<uint64_t>(fs_ratio * static_cast<double>(fs_total));
+    // the cap keeps the cluster size terms from outgrowing the disk; it must
+    // not lower the threshold below what the operator configured, or we would
+    // warn earlier than they asked for
+    d.effective = std::max(base, std::min(d.raw, cap));
+  }
+  return d;
+}
+
+HealthMonitor::data_size_warn_t HealthMonitor::get_data_size_warn(
+  uint64_t fs_total)
+{
+  // Read the committed OSDMap directly rather than gating on
+  // OSDMonitor::is_readable().  This runs from tick() on every mon, and
+  // is_readable() is false for the duration of any osdmap proposal, which on a
+  // busy cluster is often: gating on it would drop the threshold back to the
+  // unscaled base every few ticks and flap the warning on and off.  Before the
+  // mon has an osdmap this reports no OSDs and no PGs, which leaves the
+  // threshold unscaled, and that is the right answer for an empty cluster.
+  const OSDMap& osdmap = mon.osdmon()->osdmap;
+  uint64_t num_osds = osdmap.get_num_osds();
+  uint64_t num_pgs = 0;
+  for (auto& p : osdmap.get_pools()) {
+    num_pgs += p.second.get_pg_num();
+  }
+  auto d = derive_data_size_warn(
+    g_conf()->mon_data_size_warn,
+    g_conf().get_val<Option::size_t>("mon_data_size_warn_per_osd").value,
+    g_conf().get_val<Option::size_t>("mon_data_size_warn_per_pg").value,
+    num_osds, num_pgs, fs_total,
+    g_conf().get_val<double>("mon_data_size_warn_max_fs_ratio"));
+  dout(20) << __func__ << " " << byte_u_t(d.effective)
+	   << " (base " << byte_u_t(d.base)
+	   << ", raw " << byte_u_t(d.raw)
+	   << ", " << d.num_osds << " osds, " << d.num_pgs << " pgs"
+	   << ", fs " << byte_u_t(d.fs_total) << ")" << dendl;
+  return d;
+}
+
 bool HealthMonitor::check_member_health()
 {
   dout(20) << __func__ << dendl;
@@ -622,14 +708,25 @@ bool HealthMonitor::check_member_health()
 	<< "% avail";
     d.detail.push_back(ss2.str());
   }
-  if (stats.store_stats.bytes_total >= g_conf()->mon_data_size_warn) {
+  auto dsw = get_data_size_warn(stats.fs_stats.byte_total);
+  if (stats.store_stats.bytes_total >= dsw.effective) {
     stringstream ss, ss2;
     ss << "mon%plurals% %names% %isorare% using a lot of disk space";
     auto& d = next.add("MON_DISK_BIG", HEALTH_WARN, ss.str(), 1);
     ss2 << "mon." << mon.name << " is "
 	<< byte_u_t(stats.store_stats.bytes_total)
 	<< " >= mon_data_size_warn ("
-	<< byte_u_t(g_conf()->mon_data_size_warn) << ")";
+	<< byte_u_t(dsw.effective);
+    if (dsw.is_scaled()) {
+      if (dsw.is_capped()) {
+	ss2 << ", capped by mon_data_size_warn_max_fs_ratio of the "
+	    << byte_u_t(dsw.fs_total) << " mon filesystem";
+      } else {
+	ss2 << ", adapted for " << dsw.num_osds << " OSDs and "
+	    << dsw.num_pgs << " PGs";
+      }
+    }
+    ss2 << ")";
     d.detail.push_back(ss2.str());
   }
 

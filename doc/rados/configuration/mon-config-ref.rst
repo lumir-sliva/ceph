@@ -285,6 +285,9 @@ by setting it in the ``[mon]`` section of the configuration file.
 
 .. confval:: mon_data
 .. confval:: mon_data_size_warn
+.. confval:: mon_data_size_warn_per_osd
+.. confval:: mon_data_size_warn_per_pg
+.. confval:: mon_data_size_warn_max_fs_ratio
 .. confval:: mon_data_avail_warn
 .. confval:: mon_data_avail_crit
 .. confval:: mon_warn_on_crush_straw_calc_version_zero

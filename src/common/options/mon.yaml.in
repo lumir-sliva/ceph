@@ -413,13 +413,102 @@ options:
 - name: mon_data_size_warn
   type: size
   level: advanced
-  desc: issue MON_DISK_BIG health warning when mon database is above this size
-  fmt_desc: Raise ``HEALTH_WARN`` status when a monitor's data
-    store grows to be larger than this size, 15GB by default.
+  desc: base size above which the MON_DISK_BIG health warning is issued
+  long_desc: The MON_DISK_BIG threshold starts at this size and grows with the
+    size of the cluster, by mon_data_size_warn_per_osd for every OSD and by
+    mon_data_size_warn_per_pg for every PG. Set both of those to 0 to compare
+    the store against this size alone.
+  fmt_desc: Raise ``HEALTH_WARN`` status when a monitor's data store grows
+    larger than this size, 15GB by default. This is the base of the threshold
+    rather than the whole of it, because the amount a monitor has to store grows
+    with the cluster, so ``mon_data_size_warn_per_osd`` and
+    ``mon_data_size_warn_per_pg`` are added to it. Set both of those to ``0``
+    to get a fixed threshold.
   default: 15_G
   services:
   - mon
+  see_also:
+  - mon_data_size_warn_per_osd
+  - mon_data_size_warn_per_pg
+  - mon_data_size_warn_max_fs_ratio
   with_legacy: true
+- name: mon_data_size_warn_per_osd
+  type: size
+  level: advanced
+  desc: raise the MON_DISK_BIG threshold by this much for every OSD in the osdmap
+  long_desc: A monitor's store grows with the number of OSDs it tracks, so a
+    threshold that suits a small cluster reports a large one as unhealthy when
+    nothing is wrong. Every OSD in the osdmap, in or out, adds this much to the
+    threshold. The default leaves roughly twice the headroom over the store
+    sizes measured on a healthy fleet of 47 clusters, where a monitor store grew
+    at about 2.6 MiB per OSD. 0 disables the per-OSD term.
+  fmt_desc: Added to ``mon_data_size_warn`` for each OSD in the osdmap, so that
+    the ``MON_DISK_BIG`` threshold grows with the cluster. OSDs that are ``out``
+    still count, because they still occupy space in the map. ``0`` disables
+    this term.
+  default: 5_M
+  services:
+  - mon
+  see_also:
+  - mon_data_size_warn
+  - mon_data_size_warn_per_pg
+  - mon_data_size_warn_max_fs_ratio
+- name: mon_data_size_warn_per_pg
+  type: size
+  level: advanced
+  desc: raise the MON_DISK_BIG threshold by this much for every PG in the osdmap
+  long_desc: Placement groups drive the size of an osdmap through pool state,
+    pg_temp and upmap entries. Every PG of every pool adds this much to the
+    threshold. The default is 0, because on a measured fleet of 47 clusters PG
+    count explained no store growth that OSD count did not already explain; set
+    it if a cluster carries an unusually high number of PGs per OSD.
+  fmt_desc: Added to ``mon_data_size_warn`` for each PG in the osdmap, summed
+    over all pools. The default is ``0``, since PG count is normally
+    proportional to OSD count and ``mon_data_size_warn_per_osd`` already covers
+    the growth; set this for a cluster with an unusually high number of PGs per
+    OSD.
+  default: 0
+  services:
+  - mon
+  see_also:
+  - mon_data_size_warn
+  - mon_data_size_warn_per_osd
+  - mon_data_size_warn_max_fs_ratio
+- name: mon_data_size_warn_max_fs_ratio
+  type: float
+  level: advanced
+  desc: cap the cluster size terms of the MON_DISK_BIG threshold at this fraction of the mon filesystem
+  long_desc: Caps how far the cluster size terms may raise the threshold, as a
+    fraction of the filesystem that houses the store. Without this, on a large
+    cluster the threshold can grow past the size of the monitor's disk, and
+    MON_DISK_LOW or MON_DISK_CRIT becomes the first warning an operator sees.
+    The cap applies to the cluster size terms only and never lowers the
+    threshold below mon_data_size_warn, so on a filesystem small enough that
+    this fraction of it is below mon_data_size_warn the threshold is simply
+    mon_data_size_warn. Keep this below mon_data_avail_warn expressed as used
+    space (0.7 at its default of 30) if MON_DISK_BIG is to be reported before
+    MON_DISK_LOW. 0 disables the cap.
+  fmt_desc: Caps how far ``mon_data_size_warn_per_osd`` and
+    ``mon_data_size_warn_per_pg`` may raise the ``MON_DISK_BIG`` threshold, as a
+    fraction of the file system that houses the monitor's data store, so that
+    scaling the threshold up for a large cluster cannot silently defer to
+    ``MON_DISK_LOW`` and ``MON_DISK_CRIT``. The cap never lowers the threshold
+    below ``mon_data_size_warn``, so on a file system small enough that this
+    fraction of it is below ``mon_data_size_warn``, the threshold is simply
+    ``mon_data_size_warn``. Values above ``0.7``, which is where
+    ``mon_data_avail_warn`` fires at its default of 30% available, let
+    ``MON_DISK_LOW`` report first. ``0`` disables the cap.
+  default: 0.5
+  services:
+  - mon
+  see_also:
+  - mon_data_size_warn
+  - mon_data_size_warn_per_osd
+  - mon_data_size_warn_per_pg
+  - mon_data_avail_warn
+  - mon_data_avail_crit
+  min: 0
+  max: 1
 - name: mon_daemon_bytes
   type: size
   level: advanced

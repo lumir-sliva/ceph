@@ -70,7 +70,51 @@ public:
   /**
    * @} // HealthMonitor_Inherited_h
    */
+
+  /// the MON_DISK_BIG threshold, and the inputs it was derived from
+  struct data_size_warn_t {
+    uint64_t effective = 0;  ///< what the store size is compared against
+    uint64_t raw = 0;        ///< before the filesystem cap was applied
+    uint64_t base = 0;       ///< mon_data_size_warn
+    uint64_t num_osds = 0;
+    uint64_t num_pgs = 0;
+    uint64_t fs_total = 0;   ///< 0 when the filesystem size is unknown
+    double fs_ratio = 0;
+
+    /// the cluster size terms raised the threshold
+    bool is_scaled() const { return effective > base; }
+    /// the filesystem cap held the threshold below the scaled value
+    bool is_capped() const { return effective < raw; }
+  };
+
+  /**
+   * Derive the effective MON_DISK_BIG threshold.
+   *
+   * Scales the base threshold by the size of the cluster, since the amount a
+   * mon has to store grows with the number of OSDs and PGs it tracks.  The
+   * cluster size terms are then held below @p fs_ratio of the filesystem that
+   * houses the store, so that scaling the threshold up cannot push it past the
+   * point where MON_DISK_LOW and MON_DISK_CRIT become the operator's first
+   * warning.  The cap never lowers the threshold below @p base, so it cannot
+   * make the warning fire earlier than the configured value; on a filesystem
+   * small enough that @p fs_ratio of it is below @p base, the threshold is
+   * simply @p base, exactly as it was before the threshold became adaptive.
+   *
+   * All arithmetic saturates: no combination of options can wrap.
+   */
+  static data_size_warn_t derive_data_size_warn(
+    uint64_t base,
+    uint64_t per_osd,
+    uint64_t per_pg,
+    uint64_t num_osds,
+    uint64_t num_pgs,
+    uint64_t fs_total,
+    double fs_ratio);
+
 private:
+  /// derive the MON_DISK_BIG threshold from the options and this mon's OSDMap
+  data_size_warn_t get_data_size_warn(uint64_t fs_total);
+
   bool preprocess_command(MonOpRequestRef op);
 
   bool prepare_command(MonOpRequestRef op);

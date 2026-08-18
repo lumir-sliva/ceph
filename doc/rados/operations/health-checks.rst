@@ -134,8 +134,40 @@ MON_DISK_BIG
 ____________
 
 The database size for one or more Monitors is very large. This health check is
-raised if the size of the Monitor database is larger than
-:confval:`mon_data_size_warn` (default: 15 GiB).
+raised if the size of the Monitor database is larger than a threshold that
+scales with the size of the cluster:
+
+.. code-block:: none
+
+   threshold = mon_data_size_warn
+             + mon_data_size_warn_per_osd * <OSDs in the osdmap>
+             + mon_data_size_warn_per_pg  * <PGs in the osdmap>
+
+The amount a Monitor has to store grows with the number of OSDs and placement
+groups that it tracks, so a fixed threshold that suits a small cluster reports
+a large one as unhealthy when nothing is wrong. :confval:`mon_data_size_warn`
+(default: 15 GiB) is the base of the threshold, and every OSD and every PG adds
+:confval:`mon_data_size_warn_per_osd` (default: 5 MiB) and
+:confval:`mon_data_size_warn_per_pg` (default: 0, because PG count is normally
+proportional to OSD count) to it. Set both of those to ``0`` to compare the
+database against :confval:`mon_data_size_warn` alone.
+
+Those two terms are not allowed to raise the threshold above
+:confval:`mon_data_size_warn_max_fs_ratio` of the file system that houses the
+database, so that scaling it up for a large cluster cannot push it past the
+point where ``MON_DISK_LOW`` and ``MON_DISK_CRIT`` become the first warning that
+an operator sees. That cap never lowers the threshold below
+:confval:`mon_data_size_warn`: on a file system small enough that the capped
+value would fall below it, the threshold is simply
+:confval:`mon_data_size_warn`, as it was before the threshold became adaptive.
+
+The health detail reports the threshold that was applied, and how it was
+reached:
+
+.. code-block:: none
+
+   mon.a is 26 GiB >= mon_data_size_warn (25 GiB, adapted for 2060 OSDs and 34273 PGs)
+   mon.a is 25 GiB >= mon_data_size_warn (24 GiB, capped by mon_data_size_warn_max_fs_ratio of the 47 GiB mon filesystem)
 
 A large database is unusual, but does not necessarily indicate a problem.
 Monitor databases might grow in size when there are placement groups that have
@@ -153,11 +185,19 @@ This alert may also indicate that the Monitor has a bug that prevents it from
 pruning the cluster metadata that it stores. If the problem persists, please
 report a bug.
 
-To adjust the warning threshold, run the following command:
+To adjust the base of the warning threshold, run the following command:
 
 .. prompt:: bash #
 
    ceph config set global mon_data_size_warn <size>
+
+To compare the database against that size alone, without scaling it by the size
+of the cluster, run the following commands:
+
+.. prompt:: bash #
+
+   ceph config set global mon_data_size_warn_per_osd 0
+   ceph config set global mon_data_size_warn_per_pg 0
 
 MON_NETSPLIT
 ____________
