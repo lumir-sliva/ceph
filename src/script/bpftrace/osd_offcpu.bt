@@ -1,0 +1,41 @@
+#!/usr/bin/env bpftrace
+/*
+ * osd_offcpu.bt - off-CPU time of ceph-osd threads, by thread and stack.
+ *
+ * Measures how long each ceph-osd thread is blocked (locks, condition
+ * variables, I/O waits) and where, keyed by thread name and user stack.
+ * Useful for finding contention between tp_osd_tp shards, bstore_kv_sync,
+ * bstore_kv_final and msgr-worker threads that perf counters don't show.
+ *
+ * USAGE: osd_offcpu.bt <ceph-osd pid> [min block time in us, default 100]
+ *
+ * User stacks need frame pointers: build with
+ *   -DCMAKE_C_FLAGS="-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
+ *   -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
+ */
+
+BEGIN
+{
+	@min_us = $2 ? $2 : 100;
+	printf("Tracing off-CPU time of pid %d... Hit Ctrl-C to end.\n", $1);
+}
+
+tracepoint:sched:sched_switch
+{
+	if (args.prev_pid != 0 && pid == $1) {
+		@off[args.prev_pid] = nsecs;
+	}
+	if (@off[args.next_pid]) {
+		$us = (nsecs - @off[args.next_pid]) / 1000;
+		delete(@off[args.next_pid]);
+		if ($us >= @min_us) {
+			@offcpu_us[args.next_comm, ustack(perf, 24)] = sum($us);
+		}
+	}
+}
+
+END
+{
+	clear(@off);
+	clear(@min_us);
+}

@@ -1,0 +1,53 @@
+#!/usr/bin/env bpftrace
+/*
+ * bluestore_kv_vs_disk.bt - RocksDB commit latency next to device latency.
+ *
+ * Compares the time bstore_kv_sync spends in the batched synchronous
+ * RocksDB commit (RocksDBStore::submit_transaction_sync) with the latency
+ * of the block requests the ceph-osd process issues.  A commit histogram
+ * much wider than the device histogram points at software cost (RocksDB,
+ * WAL, locking) rather than the disk.
+ *
+ * USAGE: bluestore_kv_vs_disk.bt <path to ceph-osd> [ceph-osd pid]
+ */
+
+BEGIN
+{
+	printf("Tracing kv commits and block I/O... Hit Ctrl-C to end.\n");
+}
+
+uprobe:$1:cpp:"RocksDBStore::submit_transaction_sync"
+/($2 == 0 || pid == $2) && comm == "bstore_kv_sync"/
+{
+	@kv_start[tid] = nsecs;
+}
+
+uretprobe:$1:cpp:"RocksDBStore::submit_transaction_sync"
+/@kv_start[tid]/
+{
+	@kv_commit_us = hist((nsecs - @kv_start[tid]) / 1000);
+	delete(@kv_start[tid]);
+}
+
+tracepoint:block:block_rq_issue
+/($2 == 0 && strncmp(comm, "bstore", 6) == 0) || ($2 != 0 && pid == $2)/
+{
+	@rq_start[args.dev, args.sector] = nsecs;
+	@rq_comm[args.dev, args.sector] = comm;
+}
+
+tracepoint:block:block_rq_complete
+/@rq_start[args.dev, args.sector]/
+{
+	@disk_us[@rq_comm[args.dev, args.sector]] =
+		hist((nsecs - @rq_start[args.dev, args.sector]) / 1000);
+	delete(@rq_start[args.dev, args.sector]);
+	delete(@rq_comm[args.dev, args.sector]);
+}
+
+END
+{
+	clear(@kv_start);
+	clear(@rq_start);
+	clear(@rq_comm);
+}

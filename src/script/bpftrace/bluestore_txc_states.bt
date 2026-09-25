@@ -1,0 +1,55 @@
+#!/usr/bin/env bpftrace
+/*
+ * bluestore_txc_states.bt - BlueStore transaction latency per state.
+ *
+ * BlueStoreThrottle::log_state_latency() is called on every TransContext
+ * state transition with the perf counter index of the state being left,
+ * and returns the time spent in it.  This gives the same data as the
+ * l_bluestore_state_*_lat perf counters, but as full histograms, so tail
+ * latency and multi-modal distributions are visible.
+ *
+ * USAGE: bluestore_txc_states.bt <path to ceph-osd> [ceph-osd pid]
+ *
+ * log_state_latency(TransContext &txc, PerfCounters *logger, int state):
+ *   arg0 = this, arg1 = &txc, arg2 = logger, arg3 = state (counter index)
+ *   retval = ceph::mono_clock::duration (int64 nanoseconds)
+ *
+ * The counter indexes follow the l_bluestore_* enum in
+ * src/os/bluestore/BlueStore.h (l_bluestore_first = 732430); update the
+ * table below if that enum changes.
+ */
+
+BEGIN
+{
+	@name[732436] = "prepare";
+	@name[732437] = "aio_wait";
+	@name[732438] = "io_done";
+	@name[732439] = "kv_queued";
+	@name[732440] = "kv_committing";
+	@name[732441] = "kv_done";
+	@name[732442] = "finishing";
+	@name[732443] = "done";
+	@name[732444] = "deferred_queued";
+	@name[732445] = "deferred_aio_wait";
+	@name[732446] = "deferred_cleanup";
+	printf("Tracing BlueStore txc state latency... Hit Ctrl-C to end.\n");
+}
+
+uprobe:$1:cpp:"BlueStore::BlueStoreThrottle::log_state_latency"
+/$2 == 0 || pid == $2/
+{
+	@state[tid] = arg3;
+}
+
+uretprobe:$1:cpp:"BlueStore::BlueStoreThrottle::log_state_latency"
+/@state[tid]/
+{
+	@state_lat_us[@name[@state[tid]]] = hist(retval / 1000);
+	delete(@state[tid]);
+}
+
+END
+{
+	clear(@name);
+	clear(@state);
+}

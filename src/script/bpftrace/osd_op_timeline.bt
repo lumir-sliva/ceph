@@ -1,0 +1,54 @@
+#!/usr/bin/env bpftrace
+/*
+ * osd_op_timeline.bt - latency between consecutive OpRequest events.
+ *
+ * Every OSD op records lifecycle events through TrackedOp::mark_event()
+ * ("queued_for_pg", "reached_pg", "started", "op_commit", "commit_sent",
+ * "done", ...).  This script hooks that one function and builds a latency
+ * histogram for each (previous event -> event) pair, plus the total time
+ * from the first observed event to "commit_sent".
+ *
+ * USAGE: osd_op_timeline.bt <path to libceph-common.so> [ceph-osd pid]
+ *        e.g. osd_op_timeline.bt build/lib/libceph-common.so.2 $(pgrep -o ceph-osd)
+ *
+ * Requires osd_enable_op_tracker = true (the default).
+ *
+ * TrackedOp::mark_event(std::string_view event, utime_t stamp):
+ *   arg0 = this (OpRequest*), arg1 = event.size(), arg2 = event.data()
+ */
+
+BEGIN
+{
+	printf("Tracing TrackedOp::mark_event... Hit Ctrl-C to end.\n");
+}
+
+uprobe:$1:cpp:"TrackedOp::mark_event"
+/$2 == 0 || pid == $2/
+{
+	$op = arg0;
+	$ev = str(arg2, arg1);
+
+	if (@last[$op]) {
+		@event_lat_us[@prev[$op], $ev] = hist((nsecs - @last[$op]) / 1000);
+	} else {
+		@first[$op] = nsecs;
+	}
+	@prev[$op] = $ev;
+	@last[$op] = nsecs;
+
+	if ($ev == "commit_sent") {
+		@op_lat_us = hist((nsecs - @first[$op]) / 1000);
+	}
+	if ($ev == "done") {
+		delete(@prev[$op]);
+		delete(@last[$op]);
+		delete(@first[$op]);
+	}
+}
+
+END
+{
+	clear(@prev);
+	clear(@last);
+	clear(@first);
+}
